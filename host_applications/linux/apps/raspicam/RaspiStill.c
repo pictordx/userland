@@ -51,6 +51,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <string.h>
 #include <memory.h>
@@ -69,6 +70,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/util/mmal_default_components.h"
 #include "interface/mmal/util/mmal_connection.h"
 #include "interface/mmal/mmal_parameters_camera.h"
+
+#include "host_applications/linux/libs/sm/user-vcsm.h"
 
 #include "RaspiCommonSettings.h"
 #include "RaspiCamControl.h"
@@ -102,6 +105,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define MAX_USER_EXIF_TAGS      32
 #define MAX_EXIF_PAYLOAD_LENGTH 128
+
+///definitions for assign_ls_grid function 
+#define MaxCharacters  40564
+#define TableSize 8112
 
 /// Frame advance method
 enum
@@ -158,6 +165,8 @@ typedef struct
    MMAL_POOL_T *encoder_pool; /// Pointer to the pool of buffers used by encoder output port
 
    RASPITEX_STATE raspitex_state; /// GL renderer state and parameters
+   
+   unsigned int lens_shading;          /// VCSM handle to memory for lens shading override
 
 } RASPISTILL_STATE;
 
@@ -761,7 +770,64 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
    if (complete)
       vcos_semaphore_post(&(pData->complete_semaphore));
 }
+/**
+Determine which camera the capture is being taken with, in order to use the correct Lens shading table for capture
 
+*/
+static void read_camera_number(int *cam_num) {
+    //intialise variables
+    FILE* CamConfig;
+    char CamAssign[1];
+    char* stpt = CamAssign;
+    char* edpt;
+
+    //open file 
+    CamConfig = fopen("/usr/share/pictorial/number.txt", "r");
+    fgets(CamAssign, 5, CamConfig);
+    //assign singular required value
+    *cam_num = strtol(stpt, &edpt, 10);
+    //potential need to check this value as function strtol defaults to 0 if a non-number is noticed. 
+    //ensure camera number selected falls within usable boundaries, but throw up error message. 
+    if (*cam_num > 5 || *cam_num < 0) {
+        *cam_num = 5;
+        printf("Error setting camera value; outside number of present cameras. Setting to camera 6 lens correction"); //locate error messaging here
+    }
+
+    return;
+}
+
+/**
+* Determine camera lens shading table and return correct table for camera taking image 
+
+*/
+static void assign_ls_table(int Camera_num, uint8_t *BigGrid) {
+    //read 6x 8812 arrays 
+    int tmp;
+ //Potential error through string being too large, decrease this to more closely align with generated character count. 
+    char Store[MaxCharacters];
+    char *tempString = Store;
+    char *tempendString;
+    FILE* LCdata;
+
+    LCdata = fopen("/usr/share/pictorial/Shadetablecal.txt", "r"); //Change name to match config files 
+    //Include error break here to indicate missing config files. 
+    for (int i = 0; i < 6; i++) {
+        //get line from file; 1 line = 1 camera ls_table       
+        fgets(Store, MaxCharacters, LCdata);
+        if (i == Camera_num) {
+            for (int j = 0; j < 8112; j++) {
+                //errno = 0;
+                //iterate through the line storing value into one of many array pointers  
+                tmp = strtol(tempString, &tempendString, 10);
+                BigGrid[j] = (uint8_t)tmp;
+                tempString = tempendString+1;
+            }
+        }
+    }
+    fclose(LCdata);
+
+    return;
+}
 /**
  * Create the camera component, set up its ports
  *
@@ -821,6 +887,17 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       vcos_log_error("Could not set sensor mode : error %d", status);
       goto error;
    }
+   
+   if(state->wantRAW)
+   {
+      status = mmal_port_parameter_set_uint32(camera->control, MMAL_PARAMETER_CAMERA_ISP_BLOCK_OVERRIDE, ~8);
+
+      if (status != MMAL_SUCCESS)
+      {
+         vcos_log_error("Could not set sensor mode : error %d", status);
+         goto error;
+      }
+   }
 
    preview_port = camera->output[MMAL_CAMERA_PREVIEW_PORT];
    video_port = camera->output[MMAL_CAMERA_VIDEO_PORT];
@@ -859,6 +936,42 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       }
 
       mmal_port_parameter_set(camera->control, &cam_config.hdr);
+   }
+   
+   {
+   MMAL_PARAMETER_LENS_SHADING_T ls = {{MMAL_PARAMETER_LENS_SHADING_OVERRIDE, sizeof(MMAL_PARAMETER_LENS_SHADING_T)}};
+   void *grid;
+
+   //#include "ls_table.h"
+   //define universal parameters  
+   int camnum;
+   read_camera_number(&camnum);
+   uint32_t ref_transform = 3;
+   uint32_t grid_width = 52;
+   uint32_t grid_height = 39;
+   uint8_t ls_grid[TableSize];
+   assign_ls_table(camnum, ls_grid);
+
+  
+
+   ls.enabled = MMAL_TRUE;
+   ls.grid_cell_size = 64;
+   ls.grid_width = ls.grid_stride = grid_width;
+   ls.grid_height = grid_height;
+   ls.ref_transform = ref_transform;
+
+   state->lens_shading = vcsm_malloc(ls.grid_stride*ls.grid_height*4, "ls_grid");
+   ls.mem_handle_table = vcsm_vc_hdl_from_hdl(state->lens_shading);
+
+   grid = vcsm_lock(state->lens_shading);
+
+   memcpy(grid, ls_grid, vcos_min(sizeof(ls_grid), ls.grid_stride*ls.grid_height*4));
+
+   vcsm_unlock_hdl(state->lens_shading);
+
+   status = mmal_port_parameter_set(camera->control, &ls.hdr);
+   if (status != MMAL_SUCCESS)
+   vcos_log_error("Failed to set lens shading parameters - %d", status);
    }
 
    raspicamcontrol_set_all_parameters(camera, &state->camera_parameters);
@@ -1648,6 +1761,7 @@ int main(int argc, const char **argv)
    MMAL_PORT_T *encoder_output_port = NULL;
 
    bcm_host_init();
+   vcsm_init();
 
    // Register our application with the logging system
    vcos_log_register("RaspiStill", VCOS_LOG_CATEGORY);
@@ -2064,6 +2178,11 @@ error:
 
    if (status != MMAL_SUCCESS)
       raspicamcontrol_check_configuration(128);
+      
+   if(state.lens_shading)
+      vcsm_free(state.lens_shading);
+   vcsm_exit();
+
 
    return exit_code;
 }

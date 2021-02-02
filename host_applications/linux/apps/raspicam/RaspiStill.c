@@ -901,7 +901,8 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    preview_port = camera->output[MMAL_CAMERA_PREVIEW_PORT];
    video_port = camera->output[MMAL_CAMERA_VIDEO_PORT];
-   still_port = camera->output[MMAL_CAMERA_CAPTURE_PORT];
+   // still_port = camera->output[MMAL_CAMERA_CAPTURE_PORT];
+   still_port = camera->output[MMAL_CAMERA_PREVIEW_PORT];
 
    // Enable the camera, and tell it its control callback function
    status = mmal_port_enable(camera->control, default_camera_control_callback);

@@ -31,7 +31,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static const MMALOMX_PARAM_ENUM_TRANSLATE_T mmalomx_param_enum_awb_mode[] = {
    {MMAL_PARAM_AWBMODE_OFF,         OMX_WhiteBalControlOff},
-   {MMAL_PARAM_AWBMODE_AUTO,        OMX_WhiteBalControlAuto},
+   {MMAL_PARAM_AWBMODE_AUTO,        OMX_WhiteBalControlOff},
    {MMAL_PARAM_AWBMODE_SUNLIGHT,    OMX_WhiteBalControlSunLight},
    {MMAL_PARAM_AWBMODE_CLOUDY,      OMX_WhiteBalControlCloudy},
    {MMAL_PARAM_AWBMODE_SHADE,       OMX_WhiteBalControlShade},

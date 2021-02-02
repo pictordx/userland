@@ -1,0 +1,5 @@
+
+break RaspiStill.c:2085
+
+start -t 0 -cs 1 -n -o test3.png
+

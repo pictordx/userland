@@ -80,7 +80,7 @@ static const int flicker_avoid_map_size = sizeof(flicker_avoid_map) / sizeof(fli
 static XREF_T awb_map[] =
 {
    {"off",           MMAL_PARAM_AWBMODE_OFF},
-   {"auto",          MMAL_PARAM_AWBMODE_AUTO},
+   {"auto",          MMAL_PARAM_AWBMODE_OFF},
    {"sun",           MMAL_PARAM_AWBMODE_SUNLIGHT},
    {"cloud",         MMAL_PARAM_AWBMODE_CLOUDY},
    {"shade",         MMAL_PARAM_AWBMODE_SHADE},
@@ -348,7 +348,7 @@ int raspicamcontrol_cycle_test(MMAL_COMPONENT_T *camera)
          raspicamcontrol_set_awb_mode(camera, awb_map[parameter_option].mmal_mode);
       else
       {
-         raspicamcontrol_set_awb_mode(camera, MMAL_PARAM_AWBMODE_AUTO);
+         raspicamcontrol_set_awb_mode(camera, MMAL_PARAM_AWBMODE_OFF);
          parameter++;
       }
    }
@@ -492,7 +492,7 @@ static MMAL_PARAM_AWBMODE_T awb_mode_from_string(const char *str)
       return (MMAL_PARAM_AWBMODE_T)i;
 
    vcos_log_error("Unknown awb mode: %s", str);
-   return MMAL_PARAM_AWBMODE_AUTO;
+   return MMAL_PARAM_AWBMODE_OFF;
 }
 
 /**
@@ -961,7 +961,7 @@ void raspicamcontrol_set_defaults(RASPICAM_CAMERA_PARAMETERS *params)
    params->exposureMode = MMAL_PARAM_EXPOSUREMODE_AUTO;
    params->flickerAvoidMode = MMAL_PARAM_FLICKERAVOID_OFF;
    params->exposureMeterMode = MMAL_PARAM_EXPOSUREMETERINGMODE_AVERAGE;
-   params->awbMode = MMAL_PARAM_AWBMODE_AUTO;
+   params->awbMode = MMAL_PARAM_AWBMODE_OFF;
    params->imageEffect = MMAL_PARAM_IMAGEFX_NONE;
    params->colourEffects.enable = 0;
    params->colourEffects.u = 128;
